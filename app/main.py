@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.routers import projects
+from app.routers import scans
+from app.ui import router as ui_router
 
 app = FastAPI(title=settings.app_name)
 
@@ -31,6 +33,8 @@ async def health_check():
 
 
 app.include_router(projects.router, prefix=settings.api_prefix)
+app.include_router(scans.router, prefix=settings.api_prefix)
+app.include_router(ui_router.router)
 
 authorization_path = settings.data_dir / settings.authorization_subdir
 app.mount("/static/authorizations", StaticFiles(directory=authorization_path), name="authorizations")

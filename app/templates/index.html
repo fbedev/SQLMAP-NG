@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SQLMap Pro Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #0f172a; color: #e2e8f0; }
+    h1, h2 { color: #38bdf8; }
+    section { margin-bottom: 32px; padding: 16px; border: 1px solid #1e293b; border-radius: 8px; background: #111c34; }
+    label { display: block; margin-top: 8px; }
+    input, textarea, select { width: 100%; padding: 8px; margin-top: 4px; background: #0f172a; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 4px; }
+    button { margin-top: 12px; padding: 10px 16px; background: #38bdf8; color: #0f172a; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #0ea5e9; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border: 1px solid #1e293b; padding: 8px; text-align: left; }
+    th { background: #1e293b; }
+    pre { background: #0f172a; padding: 8px; overflow-x: auto; border-radius: 4px; border: 1px solid #1e293b; }
+    .notice { font-size: 0.9rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <h1>SQLMap Pro Control Center</h1>
+  <p class="notice">Launch educational or live SQL injection probes against targets with explicit consent.</p>
+
+  <section>
+    <h2>1. Create Authorized Project</h2>
+    <form id="project-form">
+      <label>Name<input name="name" required /></label>
+      <label>Target URL (with query string)<input name="target_url" required /></label>
+      <label>Attestor Name<input name="attestor_name" required /></label>
+      <label>Attestor Email<input type="email" name="attestor_email" required /></label>
+      <label>Attestation Statement<textarea name="attestation_statement" rows="2" required>Authorized for testing</textarea></label>
+      <label>Consent Artifact (optional)<input type="file" name="consentFile" /></label>
+      <button type="submit">Create Project</button>
+    </form>
+    <pre id="project-output"></pre>
+  </section>
+
+  <section>
+    <h2>2. Launch Scan</h2>
+    <label>Select Project
+      <select id="project-select"></select>
+    </label>
+    <label>Select Module
+      <select id="module-select"></select>
+    </label>
+    <label><input type="checkbox" id="safe-mode" checked /> Safe Mode (static heuristics only)</label>
+    <button id="launch-scan">Run Scan</button>
+    <pre id="scan-output"></pre>
+  </section>
+
+  <section>
+    <h2>Scan Sessions</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Scan ID</th>
+          <th>Project</th>
+          <th>Module</th>
+          <th>Status</th>
+          <th>Findings</th>
+        </tr>
+      </thead>
+      <tbody id="scan-table-body"></tbody>
+    </table>
+  </section>
+
+  <script>
+    const apiBase = window.location.origin;
+    const modules = {{ modules | tojson }};
+    const projects = {{ projects | tojson }};
+    const scans = {{ scans | tojson }};
+
+    const projectSelect = document.getElementById('project-select');
+    const moduleSelect = document.getElementById('module-select');
+    const projectOutput = document.getElementById('project-output');
+    const scanOutput = document.getElementById('scan-output');
+    const scanTableBody = document.getElementById('scan-table-body');
+
+    function renderProjects(list) {
+      projectSelect.innerHTML = '';
+      list.forEach((proj) => {
+        const option = document.createElement('option');
+        option.value = proj.id;
+        option.textContent = `${proj.name} (${proj.status})`;
+        projectSelect.appendChild(option);
+      });
+      if (!list.length) {
+        const opt = document.createElement('option');
+        opt.textContent = 'No projects yet';
+        projectSelect.appendChild(opt);
+      }
+    }
+
+    function renderModules(list) {
+      moduleSelect.innerHTML = '';
+      list.forEach((mod) => {
+        const option = document.createElement('option');
+        option.value = mod.id;
+        option.textContent = `${mod.name} ${mod.safe_mode_only ? '(Safe Mode Only)' : ''}`;
+        moduleSelect.appendChild(option);
+      });
+    }
+
+    function renderScans(list) {
+      scanTableBody.innerHTML = '';
+      list.forEach((scan) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${scan.id}</td>
+          <td>${scan.project_id}</td>
+          <td>${scan.module_id}</td>
+          <td>${scan.status}</td>
+          <td>${scan.findings.length}</td>
+        `;
+        scanTableBody.appendChild(row);
+      });
+    }
+
+    renderModules(modules);
+    renderProjects(projects);
+    renderScans(scans);
+
+    document.getElementById('project-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const data = new FormData(form);
+      try {
+        const response = await fetch(`${apiBase}/api/projects`, {
+          method: 'POST',
+          body: data,
+        });
+        const payload = await response.json();
+        projectOutput.textContent = JSON.stringify(payload, null, 2);
+        if (response.ok) {
+          projects.push(payload.project);
+          renderProjects(projects);
+          form.reset();
+        }
+      } catch (error) {
+        projectOutput.textContent = error.message;
+      }
+    });
+
+    document.getElementById('launch-scan').addEventListener('click', async () => {
+      const projectId = projectSelect.value;
+      const moduleId = moduleSelect.value;
+      const safeMode = document.getElementById('safe-mode').checked;
+      if (!projectId || !moduleId) {
+        scanOutput.textContent = 'Choose a project and module first.';
+        return;
+      }
+      try {
+        const response = await fetch(`${apiBase}/api/scans/projects/${projectId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ module_id: moduleId, safe_mode: safeMode }),
+        });
+        const payload = await response.json();
+        scanOutput.textContent = JSON.stringify(payload, null, 2);
+        if (response.ok) {
+          scans.push(payload.scan_session);
+          renderScans(scans);
+        }
+      } catch (error) {
+        scanOutput.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>
